@@ -26,11 +26,18 @@ jobs:
       - name: Compilar versiones de desarrollo
         run: |
           set -e
+
           for archivo in versiones/*.ino; do
-            echo "Compilando $archivo"
+            nombre=$(basename "$archivo" .ino)
+
+            mkdir -p "/tmp/dymcyber/$nombre"
+            cp "$archivo" "/tmp/dymcyber/$nombre/$nombre.ino"
+
+            echo "Compilando version: $nombre"
+
             arduino-cli compile \
               --fqbn arduino:avr:uno \
-              "$archivo"
+              "/tmp/dymcyber/$nombre"
           done
 
       - name: Compilar firmware final

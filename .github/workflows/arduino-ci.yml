@@ -1,0 +1,40 @@
+
+name: DYM Cyber - Pipeline DevOps
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  compilar-arduino:
+    name: Compilar versiones Arduino
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Instalar plataforma Arduino Uno
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+
+      - name: Compilar versiones de desarrollo
+        run: |
+          set -e
+          for archivo in versiones/*.ino; do
+            echo "Compilando $archivo"
+            arduino-cli compile \
+              --fqbn arduino:avr:uno \
+              "$archivo"
+          done
+
+      - name: Compilar firmware final
+        run: |
+          arduino-cli compile \
+            --fqbn arduino:avr:uno \
+            firmware/

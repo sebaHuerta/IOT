@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DYM Cyber · Monitoreo de Velocidad</title>
+<script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
+<style>
+  :root { --bg:#0f1419; --panel:#182029; --line:#26313d; --txt:#e6edf3; --mut:#8b98a5;
+          --ok:#2ea043; --warn:#d29922; --bad:#f85149; --acc:#3b82f6; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--txt); }
+  header { padding:18px 28px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  header h1 { margin:0; font-size:20px; } header small { color:var(--mut); }
+  .pill { padding:4px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+  main { padding:24px 28px; display:grid; gap:18px; grid-template-columns:repeat(12,1fr); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .kpi { grid-column:span 3; } .kpi .v { font-size:30px; font-weight:700; margin-top:6px; } .kpi .l { color:var(--mut); font-size:13px; }
+  .chart { grid-column:span 8; } .side { grid-column:span 4; }
+  .half { grid-column:span 6; }
+  h2 { font-size:15px; margin:0 0 12px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); } th { color:var(--mut); font-weight:500; }
+  input,select,button { background:#0f1419; color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:7px 9px; font-size:13px; }
+  button { background:var(--acc); border:none; cursor:pointer; font-weight:600; }
+  form { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)} .mut{color:var(--mut)}
+  a { color:var(--acc); }
+  @media (max-width:900px){ .kpi{grid-column:span 6} .chart,.side,.half{grid-column:span 12} }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>DYM Cyber · Correa transportadora banda01</h1>
+  <small>Broker {{ broker }} · topic {{ topic }}/# · ETL MQTT → SQLite → API REST</small></div>
+  <span id="conn" class="pill">…</span>
+</header>
+<main>
+  <div class="card kpi"><div class="l">Estado del equipo</div><div class="v" id="kEstado">—</div></div>
+  <div class="card kpi"><div class="l">Velocidad actual (m/s)</div><div class="v" id="kVel">—</div></div>
+  <div class="card kpi"><div class="l">Desviación / umbral</div><div class="v" id="kDesv">—</div></div>
+  <div class="card kpi"><div class="l">Mediciones · alertas</div><div class="v" id="kTot">—</div></div>
+
+  <div class="card chart"><h2>Velocidad vs nominal (últimas 60 mediciones)</h2><canvas id="graf" height="120"></canvas></div>
+
+  <div class="card side">
+    <h2>Configuración remota (REST → MQTT → ESP32)</h2>
+    <form id="fCfg"><input name="nominal" type="number" step="0.01" min="0.8" max="1.2" placeholder="Nominal m/s" style="width:120px">
+      <input name="umbral" type="number" step="0.5" min="0.5" max="20" placeholder="Umbral %" style="width:110px"><button>Enviar</button></form>
+    <div id="cfgMsg" class="mut"></div>
+    <h2 style="margin-top:18px">Resumen</h2>
+    <form><select id="selPer"><option value="dia">Diario</option><option value="semana">Semanal</option><option value="mes">Mensual</option></select></form>
+    <table id="tRes"></table>
+    <p><a href="/api/export.csv">⬇ Exportar mediciones (CSV)</a></p>
+  </div>
+
+  <div class="card half"><h2>Alertas recientes</h2><table id="tAl"><thead><tr><th>Hora</th><th>ID</th><th>Tipo</th><th>Vel.</th><th>Desv.</th></tr></thead><tbody></tbody></table></div>
+
+  <div class="card half"><h2>Mantenciones</h2>
+    <form id="fMan"><input name="descripcion" placeholder="Descripción" required style="flex:1">
+      <input name="responsable" placeholder="Responsable"><button>Registrar</button></form>
+    <table id="tMan"><thead><tr><th>Fecha</th><th>Descripción</th><th>Responsable</th></tr></thead><tbody></tbody></table></div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const hora = iso => iso ? iso.replace('T',' ').slice(5,19) : '';
+const chart = new Chart($('#graf'), {
+  type:'line',
+  data:{ labels:[], datasets:[
+    {label:'Actual', data:[], borderColor:'#3b82f6', tension:.25, pointRadius:2},
+    {label:'Nominal', data:[], borderColor:'#8b98a5', borderDash:[6,4], pointRadius:0},
+    {label:'Límite +', data:[], borderColor:'rgba(248,81,73,.5)', borderDash:[2,3], pointRadius:0},
+    {label:'Límite −', data:[], borderColor:'rgba(248,81,73,.5)', borderDash:[2,3], pointRadius:0}]},
+  options:{ animation:false, scales:{ y:{min:0.75,max:1.25, ticks:{color:'#8b98a5'}, grid:{color:'#26313d'}},
+            x:{ticks:{color:'#8b98a5', maxTicksLimit:10}, grid:{color:'#26313d'}} },
+            plugins:{legend:{labels:{color:'#e6edf3'}}} }
+});
+
+async function refrescar(){
+  try {
+    const [est, med, al, man] = await Promise.all(['/api/estado','/api/mediciones?limit=60','/api/alertas?limit=10','/api/mantenciones']
+      .map(u => fetch(u).then(r=>r.json())));
+    const c = $('#conn'); c.textContent = est.mqtt_conectado ? 'MQTT conectado' : 'MQTT desconectado';
+    c.style.background = est.mqtt_conectado ? 'rgba(46,160,67,.2)' : 'rgba(248,81,73,.2)';
+    const e = est.estado ? est.estado.estado : '—';
+    $('#kEstado').textContent = e; $('#kEstado').className = 'v ' + (e==='ACTIVO'?'ok':e==='OFFLINE'?'bad':'warn');
+    const u = est.ultima_medicion;
+    if (u) {
+      $('#kVel').textContent = u.actual.toFixed(3);
+      $('#kDesv').innerHTML = `<span class="${u.estado==='NORMAL'?'ok':'bad'}">${u.desviacion.toFixed(2)}%</span> <span class="mut" style="font-size:16px">/ ${u.umbral}%</span>`;
+    }
+    $('#kTot').textContent = `${est.total_mediciones} · ${est.total_alertas}`;
+    chart.data.labels = med.map(m => m.id_medicion);
+    chart.data.datasets[0].data = med.map(m => m.actual);
+    chart.data.datasets[1].data = med.map(m => m.nominal);
+    chart.data.datasets[2].data = med.map(m => +(m.nominal*(1+m.umbral/100)).toFixed(3));
+    chart.data.datasets[3].data = med.map(m => +(m.nominal*(1-m.umbral/100)).toFixed(3));
+    chart.update();
+    $('#tAl tbody').innerHTML = al.map(a => `<tr><td>${hora(a.recibido_en)}</td><td>${a.id_medicion||''}</td>
+      <td class="${a.tipo==='MEDICION_INVALIDA'?'warn':'bad'}">${a.tipo}</td><td>${a.actual??'—'}</td><td>${a.desviacion!=null?a.desviacion+'%':'—'}</td></tr>`).join('');
+    $('#tMan tbody').innerHTML = man.map(m => `<tr><td>${hora(m.fecha)}</td><td>${m.descripcion}</td><td>${m.responsable||''}</td></tr>`).join('');
+  } catch(err) { console.error(err); }
+}
+async function resumen(){
+  const r = await fetch('/api/resumen?periodo='+$('#selPer').value).then(r=>r.json());
+  const filas = [['Mediciones', r.mediciones], ['Vel. promedio', r.velocidad_promedio ?? '—'], ['Mín / Máx', `${r.velocidad_min ?? '—'} / ${r.velocidad_max ?? '—'}`],
+    ['Desv. promedio', r.desviacion_promedio!=null ? r.desviacion_promedio+'%' : '—'], ['% tiempo normal', r.porcentaje_normal!=null ? r.porcentaje_normal+'%' : '—'],
+    ...Object.entries(r.alertas_por_tipo||{}).map(([k,v]) => ['Alertas '+k.toLowerCase(), v])];
+  $('#tRes').innerHTML = filas.map(([k,v]) => `<tr><td class="mut">${k}</td><td>${v}</td></tr>`).join('');
+}
+$('#selPer').onchange = resumen;
+$('#fCfg').onsubmit = async ev => {
+  ev.preventDefault(); const f = new FormData(ev.target); const body = {};
+  if (f.get('nominal')) body.nominal = +f.get('nominal'); if (f.get('umbral')) body.umbral = +f.get('umbral');
+  const r = await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j = await r.json(); $('#cfgMsg').textContent = r.ok ? 'Enviado: '+j.enviado.join(', ') : 'Error: '+j.error;
+};
+$('#fMan').onsubmit = async ev => {
+  ev.preventDefault(); const f = new FormData(ev.target);
+  await fetch('/api/mantenciones',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(f))});
+  ev.target.reset(); refrescar();
+};
+refrescar(); resumen(); setInterval(refrescar, 3000); setInterval(resumen, 15000);
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+# Pipeline DevOps EV3 - Kairós (DYM Cyber)
+# Un trabajo por capa: firmware ESP32, backend Flask y diagrama Wokwi
+name: EV3 - Kairos CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firmware-esp32:
+    name: Compilar firmware ESP32
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Instalar core ESP32 y librerias
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+          arduino-cli lib install PubSubClient "LiquidCrystal I2C"
+      - name: Compilar sketch
+        run: |
+          mkdir -p build/sketch && cp ev3/wokwi/sketch.ino build/sketch/sketch.ino
+          arduino-cli compile --fqbn esp32:esp32:esp32 build/sketch
+
+  backend-flask:
+    name: Probar backend Flask (ETL + API REST)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r ev3/backend/requirements.txt pytest
+      - name: Pruebas ETL + API REST
+        working-directory: ev3/backend
+        run: pytest -v
+
+  diagrama-wokwi:
+    name: Validar diagrama Wokwi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar diagram.json
+        run: python3 -c "import json; d=json.load(open('ev3/wokwi/diagram.json')); print(len(d['parts']), 'componentes,', len(d['connections']), 'conexiones'); assert len(d['parts']) > 5"

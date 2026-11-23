@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DYM Cyber · Monitoreo de correa banda01</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --concreto: #e8ebee;
+    --panel: #ffffff;
+    --linea: #d3d8de;
+    --tinta: #1b2a4a;
+    --tinta-2: #5a6578;
+    --seguridad: #f2b705;
+    --ok: #1f8a5b;
+    --alerta: #c8372d;
+    --aviso: #b7791f;
+    --radio: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--concreto);
+    color: var(--tinta);
+    font: 400 15px/1.5 "Barlow", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .num { font-family: "Barlow Condensed", "Barlow", sans-serif; font-variant-numeric: tabular-nums; }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--seguridad); outline-offset: 2px; }
+
+  /* ---------- Cabecera ---------- */
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding: 14px clamp(16px, 3vw, 36px);
+    background: var(--panel); border-bottom: 1px solid var(--linea);
+  }
+  .marca { display: flex; align-items: center; gap: 12px; }
+  .marca svg { flex: none; }
+  .marca h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+  .marca p { margin: 0; color: var(--tinta-2); font-size: 13px; }
+  .estados { display: flex; gap: 10px; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    background: #f1f3f5; border: 1px solid var(--linea);
+  }
+  .chip i { width: 9px; height: 9px; border-radius: 50%; background: #9aa3ae; }
+  .chip.ok i { background: var(--ok); } .chip.mal i { background: var(--alerta); } .chip.medio i { background: var(--seguridad); }
+
+  main { padding: 22px clamp(16px, 3vw, 36px) 40px; display: grid; gap: 18px; grid-template-columns: repeat(12, 1fr); max-width: 1480px; margin: 0 auto; }
+
+  /* ---------- Correa (elemento principal) ---------- */
+  .correa {
+    grid-column: 1 / -1;
+    background: var(--panel); border: 1px solid var(--linea); border-radius: var(--radio);
+    display: grid; grid-template-columns: minmax(260px, 340px) 1fr; overflow: hidden;
+  }
+  .lectura { padding: 24px 28px; border-right: 1px solid var(--linea); display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+  .lectura .etq { color: var(--tinta-2); font-size: 14px; }
+  .lectura .vel { font-size: 88px; line-height: .9; font-weight: 700; letter-spacing: -0.02em; }
+  .lectura .vel small { font-size: 28px; font-weight: 600; color: var(--tinta-2); margin-left: 6px; }
+  .lectura .veredicto { margin-top: 10px; font-size: 18px; font-weight: 700; }
+  .lectura .detalle { color: var(--tinta-2); font-size: 14px; }
+  .veredicto.ok { color: var(--ok); } .veredicto.mal { color: var(--alerta); } .veredicto.aviso { color: var(--aviso); }
+
+  .escena { position: relative; min-height: 210px; padding: 10px 20px 16px; display: flex; flex-direction: column; justify-content: space-between; background: linear-gradient(#f7f8f9, #eef1f3); }
+  .banda-wrap { position: relative; height: 86px; margin: 8px 6px 0; }
+  .banda {
+    position: absolute; inset: 18px 34px; border-radius: 40px;
+    background-color: #2b3445;
+    background-image: repeating-linear-gradient(90deg, transparent 0 26px, rgba(255,255,255,.16) 26px 30px);
+    background-size: 30px 100%;
+    box-shadow: inset 0 -6px 0 rgba(0,0,0,.18);
+    animation: avanzar var(--periodo, 1s) linear infinite;
+    animation-play-state: var(--marcha, paused);
+  }
+  .banda::before, .banda::after { content: ""; position: absolute; left: 30px; right: 30px; height: 4px; background: var(--seguridad); opacity: .9; }
+  .banda::before { top: -4px; } .banda::after { bottom: -4px; }
+  @keyframes avanzar { to { background-position: 30px 0; } }
+  .rodillo {
+    position: absolute; top: 9px; width: 68px; height: 68px; border-radius: 50%;
+    background: radial-gradient(circle, #d6dbe1 0 9px, #8d97a5 10px 13px, #b9c1cb 14px 100%);
+    border: 3px solid #6b7584;
+    animation: girar var(--periodo-r, 1s) linear infinite; animation-play-state: var(--marcha, paused);
+  }
+  .rodillo::after { content: ""; position: absolute; left: 50%; top: 4px; width: 3px; height: 18px; margin-left: -1.5px; background: #5b6575; border-radius: 2px; }
+  .rodillo.izq { left: 0; } .rodillo.der { right: 0; }
+  @keyframes girar { to { transform: rotate(360deg); } }
+  .material { position: absolute; top: 4px; left: 34px; right: 34px; height: 18px; overflow: hidden; pointer-events: none; }
+  .material span {
+    position: absolute; bottom: 0; width: 26px; height: 14px; border-radius: 8px 10px 3px 3px; background: #9c8a6e;
+    animation: avanzar-mat var(--periodo-m, 6s) linear infinite; animation-play-state: var(--marcha, paused);
+  }
+  @keyframes avanzar-mat { from { transform: translateX(-40px); } to { transform: translateX(calc(100vw)); } }
+
+  #cinta { display: block; width: 100%; height: 230px; }
+  .escala { margin: 6px 6px 0; }
+  .escala-barra { position: relative; height: 14px; border-radius: 7px; background: #dfe3e8; }
+  .escala-banda { position: absolute; top: 0; bottom: 0; background: rgba(31,138,91,.22); border-left: 2px solid var(--ok); border-right: 2px solid var(--ok); }
+  .escala-nominal { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--tinta); }
+  .escala-aguja { position: absolute; top: -7px; width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 11px solid var(--tinta); transform: translateX(-8px); transition: left .6s ease; }
+  .escala-txt { display: flex; justify-content: space-between; font-size: 12px; color: var(--tinta-2); margin-top: 6px; }
+
+  /* ---------- Paneles ---------- */
+  .panel { background: var(--panel); border: 1px solid var(--linea); border-radius: var(--radio); padding: 18px 20px; min-width: 0; }
+  .panel h2 { margin: 0 0 12px; font-size: 16px; font-weight: 700; }
+  .panel .sub { margin: -8px 0 12px; color: var(--tinta-2); font-size: 13px; }
+  .c3 { grid-column: span 3; } .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c8 { grid-column: span 8; } .c7 { grid-column: span 7; }
+
+  .datos { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; }
+  .dato .v { font-size: 34px; font-weight: 700; line-height: 1; }
+  .dato .l { color: var(--tinta-2); font-size: 13px; margin-top: 4px; }
+
+  /* Espejo del equipo */
+  .lcd {
+    background: #9fc23a; border: 8px solid #1d4c33; border-radius: 6px; padding: 10px 12px;
+    font: 600 22px/1.25 "Courier New", monospace; color: #1f2a10; letter-spacing: .04em; white-space: pre;
+    box-shadow: inset 0 0 0 2px rgba(0,0,0,.08); overflow: hidden;
+  }
+  .leds { display: flex; gap: 18px; margin-top: 16px; }
+  .led { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--tinta-2); }
+  .led b { width: 16px; height: 16px; border-radius: 50%; background: #cfd5dc; border: 1px solid rgba(0,0,0,.12); transition: background .2s, box-shadow .2s; }
+  .led.on.v b { background: #22c55e; box-shadow: 0 0 10px #22c55e; }
+  .led.on.a b { background: #facc15; box-shadow: 0 0 10px #facc15; }
+  .led.on.r b { background: #ef4444; box-shadow: 0 0 10px #ef4444; }
+  .latido { margin-top: 12px; font-size: 13px; color: var(--tinta-2); }
+
+  /* Configuración */
+  .campo { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 12px; }
+  .campo label { grid-column: 1 / -1; font-size: 13px; color: var(--tinta-2); }
+  .campo input { width: 100%; padding: 9px 11px; border: 1px solid var(--linea); border-radius: 8px; background: #fbfcfd; }
+  .btn { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--tinta); background: var(--tinta); color: #fff; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: #24375f; }
+  .btn.sec { background: transparent; color: var(--tinta); }
+  .btn.sec:hover { background: #f0f2f5; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .aviso-cfg { font-size: 13px; min-height: 20px; color: var(--tinta-2); }
+  .aviso-cfg.ok { color: var(--ok); } .aviso-cfg.mal { color: var(--alerta); }
+
+  /* Alertas */
+  .alertas { list-style: none; margin: 0; padding: 0; max-height: 330px; overflow: auto; }
+  .alertas li { display: grid; grid-template-columns: 6px 1fr auto; gap: 12px; padding: 10px 0; border-bottom: 1px solid #edf0f3; align-items: center; }
+  .alertas li::before { content: ""; align-self: stretch; border-radius: 3px; background: var(--alerta); }
+  .alertas li.inv::before { background: var(--seguridad); }
+  .alertas .t { font-weight: 600; }
+  .alertas .d { font-size: 13px; color: var(--tinta-2); }
+  .alertas .h { font-size: 13px; color: var(--tinta-2); text-align: right; }
+  .vacio { color: var(--tinta-2); font-size: 14px; padding: 18px 0; }
+
+  /* Registro */
+  .registro { font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: #f6f7f9; border: 1px solid #e4e7eb; border-radius: 8px; padding: 10px 12px; height: 220px; overflow: auto; }
+  .registro div { white-space: pre-wrap; word-break: break-all; }
+  .registro .tp { color: #2563a8; } .registro .out { color: var(--aviso); }
+
+  .acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  details.ajustes { grid-column: 1 / -1; }
+  details.ajustes summary { cursor: pointer; font-weight: 600; }
+  .ajustes-grid { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; align-items: end; margin-top: 12px; }
+  .ajustes-grid label { font-size: 13px; color: var(--tinta-2); display: block; }
+  .ajustes-grid input { width: 100%; padding: 8px 10px; border: 1px solid var(--linea); border-radius: 8px; }
+  footer { grid-column: 1 / -1; color: var(--tinta-2); font-size: 13px; text-align: center; }
+
+  /* Operador de turno */
+  .operador { display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border-radius: 999px; border: 1px solid var(--linea); background: #f1f3f5; font-size: 13px; font-weight: 600; }
+  .operador input { border: 0; background: #fff; border-radius: 999px; padding: 4px 10px; width: 210px; font-size: 13px; }
+  .operador.falta { border-color: var(--seguridad); background: #fff8e1; }
+  .sonido { cursor: pointer; }
+
+  /* Ventanas de alerta */
+  .popups { position: fixed; bottom: 20px; right: 20px; z-index: 50; display: flex; flex-direction: column; gap: 12px; width: min(380px, calc(100vw - 32px)); }
+  .popup {
+    background: #fff; border-radius: 12px; overflow: hidden;
+    border: 1px solid #f0c9c5; box-shadow: 0 18px 40px -12px rgba(27,42,74,.35);
+    animation: entrar .28s ease-out;
+  }
+  .popup.inv { border-color: #f3dc9b; }
+  @keyframes entrar { from { transform: translateX(24px); opacity: 0; } }
+  .popup-cab { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--alerta); color: #fff; }
+  .popup.inv .popup-cab { background: var(--seguridad); color: var(--tinta); }
+  .popup-cab svg { flex: none; }
+  .popup-cab strong { font-size: 17px; }
+  .popup-cab .cerrar { margin-left: auto; background: transparent; border: 0; color: inherit; font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px; }
+  .popup-cuerpo { padding: 14px 16px 16px; }
+  .popup-vel { font-size: 40px; font-weight: 700; line-height: 1; }
+  .popup-vel small { font-size: 18px; color: var(--tinta-2); font-weight: 600; margin-left: 4px; }
+  .popup dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 12px 0 14px; font-size: 14px; }
+  .popup dt { color: var(--tinta-2); } .popup dd { margin: 0; font-weight: 600; }
+  .popup .reconocer { width: 100%; }
+  .popups .mas { align-self: flex-end; font-size: 13px; font-weight: 600; background: var(--tinta); color: #fff; padding: 5px 12px; border-radius: 999px; }
+  .alertas .rec { font-size: 12px; color: var(--ok); font-weight: 600; }
+  .alertas .pend { font-size: 12px; color: var(--alerta); font-weight: 600; }
+  @media (prefers-reduced-motion: reduce) { .popup { animation: none; } }
+
+  @media (max-width: 1100px) { .c3, .c4, .c5 { grid-column: span 6; } .c7, .c8 { grid-column: 1 / -1; } }
+  @media (max-width: 720px) {
+    .c3, .c4, .c5 { grid-column: 1 / -1; }
+    .correa { grid-template-columns: 1fr; } .lectura { border-right: 0; border-bottom: 1px solid var(--linea); }
+    .lectura .vel { font-size: 68px; } .ajustes-grid { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { .banda, .rodillo, .material span { animation: none !important; } .escala-aguja { transition: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="marca">
+    <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
+      <rect width="40" height="40" rx="9" fill="#1b2a4a"/>
+      <rect x="7" y="17" width="26" height="8" rx="4" fill="#f2b705"/>
+      <circle cx="11" cy="21" r="5" fill="#1b2a4a" stroke="#f2b705" stroke-width="2"/>
+      <circle cx="29" cy="21" r="5" fill="#1b2a4a" stroke="#f2b705" stroke-width="2"/>
+      <rect x="15" y="11" width="6" height="5" rx="1.5" fill="#fff"/><rect x="22" y="12" width="5" height="4" rx="1.5" fill="#fff"/>
+    </svg>
+    <div>
+      <h1>Correa transportadora banda01</h1>
+      <p>DYM Cyber · Planta de chancado · Monitoreo de velocidad</p>
+    </div>
+  </div>
+  <div class="estados">
+    <label class="operador" id="opWrap">Operador de turno
+      <input id="inOperador" placeholder="Escribe tu nombre" autocomplete="name"></label>
+    <button class="chip sonido" id="btnSonido" aria-pressed="false" title="Activar sonido de alerta">🔇 Sonido</button>
+    <span class="chip" id="chipBroker"><i></i><span>Conectando al broker…</span></span>
+    <span class="chip" id="chipEquipo"><i></i><span>Equipo sin datos</span></span>
+  </div>
+</header>
+
+<main>
+  <!-- Elemento principal: la correa -->
+  <section class="correa" aria-label="Estado de la correa">
+    <div class="lectura">
+      <span class="etq">Velocidad medida</span>
+      <div class="vel num"><span id="vel">—</span><small>m/s</small></div>
+      <div class="veredicto" id="veredicto">Esperando la primera medición</div>
+      <div class="detalle" id="detalle">Enciende el sistema con el botón ON/OFF en Wokwi.</div>
+    </div>
+    <div class="escena">
+      <canvas id="cinta" aria-label="Animación de la cinta transportadora" role="img"></canvas>
+      <div class="escala">
+        <div class="escala-barra" id="escala">
+          <div class="escala-banda" id="escBanda"></div>
+          <div class="escala-nominal" id="escNominal"></div>
+          <div class="escala-aguja" id="escAguja" style="left:50%"></div>
+        </div>
+        <div class="escala-txt"><span>0,80 m/s</span><span id="escRango">Zona permitida: nominal ± umbral</span><span>1,20 m/s</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel c3" aria-label="Indicadores">
+    <h2>Medición actual</h2>
+    <div class="datos">
+      <div class="dato"><div class="v num" id="kDesv">—</div><div class="l">Desviación</div></div>
+      <div class="dato"><div class="v num" id="kUmbral">—</div><div class="l">Umbral permitido</div></div>
+      <div class="dato"><div class="v num" id="kNominal">—</div><div class="l">Velocidad nominal</div></div>
+      <div class="dato"><div class="v num" id="kId" style="font-size:26px;white-space:nowrap">—</div><div class="l">ID de medición</div></div>
+      <div class="dato"><div class="v num" id="kMed">0</div><div class="l">Mediciones recibidas</div></div>
+      <div class="dato"><div class="v num" id="kAl">0</div><div class="l">Alertas</div></div>
+    </div>
+  </section>
+
+  <section class="panel c4" aria-label="Espejo del equipo">
+    <h2>Lo que muestra el equipo</h2>
+    <p class="sub">Copia de la pantalla LCD y los LED del ESP32.</p>
+    <div class="lcd" id="lcd">SIN CONEXION
+Esperando datos </div>
+    <div class="leds">
+      <span class="led v" id="ledV"><b></b>Normal</span>
+      <span class="led a" id="ledA"><b></b>Detenido</span>
+      <span class="led r" id="ledR"><b></b>Alerta</span>
+    </div>
+    <div class="latido" id="latido">Sin latido del equipo todavía.</div>
+  </section>
+
+  <section class="panel c5" aria-label="Configuración remota">
+    <h2>Configuración remota</h2>
+    <p class="sub">Se envía por MQTT al topic config y el ESP32 la aplica en la siguiente medición.</p>
+    <form class="campo" id="fNominal">
+      <label for="inNominal">Velocidad nominal (0,80 a 1,20 m/s)</label>
+      <input id="inNominal" type="number" step="0.01" min="0.8" max="1.2" placeholder="1.00" required>
+      <button class="btn" type="submit">Cambiar nominal</button>
+    </form>
+    <form class="campo" id="fUmbral">
+      <label for="inUmbral">Umbral de desviación (hasta 20 %)</label>
+      <input id="inUmbral" type="number" step="0.5" min="0.5" max="20" placeholder="5" required>
+      <button class="btn" type="submit">Cambiar umbral</button>
+    </form>
+    <div class="aviso-cfg" id="avisoCfg" role="status"></div>
+  </section>
+
+  <section class="panel c8" aria-label="Historial de velocidad">
+    <h2>Velocidad en el tiempo</h2>
+    <p class="sub">Últimas 60 mediciones frente a la velocidad nominal y los límites del umbral.</p>
+    <div style="position:relative;height:300px"><canvas id="graf"></canvas></div>
+  </section>
+
+  <section class="panel c4" aria-label="Alertas">
+    <h2>Alertas</h2>
+    <ul class="alertas" id="listaAlertas"><li class="vacio" style="display:block">Sin alertas en esta sesión.</li></ul>
+  </section>
+
+  <section class="panel c5" aria-label="Resumen">
+    <h2>Resumen de lo registrado</h2>
+    <div class="datos">
+      <div class="dato"><div class="v num" id="rProm">—</div><div class="l">Velocidad promedio</div></div>
+      <div class="dato"><div class="v num" id="rNormal">—</div><div class="l">Mediciones en rango</div></div>
+      <div class="dato"><div class="v num" id="rMin">—</div><div class="l">Mínima registrada</div></div>
+      <div class="dato"><div class="v num" id="rMax">—</div><div class="l">Máxima registrada</div></div>
+      <div class="dato"><div class="v num" id="rSub">0</div><div class="l">Subvelocidad</div></div>
+      <div class="dato"><div class="v num" id="rSobre">0</div><div class="l">Sobrevelocidad</div></div>
+    </div>
+    <div class="acciones">
+      <button class="btn" id="btnCsv">Descargar mediciones</button>
+      <button class="btn" id="btnCsvAl">Descargar alertas</button>
+      <button class="btn sec" id="btnDemo" aria-pressed="false">Simular datos</button>
+      <button class="btn sec" id="btnBorrar">Borrar historial</button>
+    </div>
+  </section>
+
+  <section class="panel c7" aria-label="Mensajes MQTT">
+    <h2>Mensajes MQTT en vivo</h2>
+    <p class="sub" id="subTopic">Suscrito a dymcyber/banda01/#</p>
+    <div class="registro" id="registro" aria-live="off"></div>
+  </section>
+
+  <details class="panel ajustes">
+    <summary>Conexión al broker</summary>
+    <form class="ajustes-grid" id="fAjustes">
+      <div><label for="inBroker">Broker (WebSocket seguro)</label><input id="inBroker"></div>
+      <div><label for="inTopic">Topic base</label><input id="inTopic"></div>
+      <button class="btn" type="submit">Reconectar</button>
+    </form>
+  </details>
+
+  <div class="popups" id="popups" aria-live="assertive"></div>
+
+  <footer>Flujo: ESP32 (Wokwi) → MQTT → broker HiveMQ → este dashboard · El historial se guarda en este navegador.</footer>
+</main>
+
+<script>
+(() => {
+  // ---------------- Configuración ----------------
+  const LS = { get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+               set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+  let BROKER = LS.get('dym.broker', 'wss://broker.hivemq.com:8884/mqtt');
+  let BASE = LS.get('dym.topic', 'dymcyber/banda01');
+  const VMIN = 0.80, VMAX = 1.20, MAXHIST = 500;
+
+  const $ = id => document.getElementById(id);
+  const fmt = (n, d = 2) => n == null || isNaN(n) ? '—' : Number(n).toFixed(d).replace('.', ',');
+  const hora = t => new Date(t).toLocaleTimeString('es-CL', { hour12: false });
+  const fecha = t => new Date(t).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const operador = () => ($('inOperador').value || '').trim();
+
+  // ---------------- Estado ----------------
+  let hist = LS.get('dym.hist', []);        // mediciones
+  let alertas = LS.get('dym.alertas', []);   // alertas
+  let equipo = { estado: null, nominal: 1.0, umbral: 5.0, sesion: 0 };
+  let ultimoLatido = null, cfgPendiente = null, client = null, demoTimer = null;
+
+  // ---------------- Gráfico ----------------
+  const chart = new Chart($('graf'), {
+    type: 'line',
+    data: { labels: [], datasets: [
+      { label: 'Velocidad medida', data: [], borderColor: '#1b2a4a', backgroundColor: '#1b2a4a', borderWidth: 2.5, tension: .3, pointRadius: 2.5 },
+      { label: 'Nominal', data: [], borderColor: '#f2b705', borderWidth: 2, borderDash: [7, 5], pointRadius: 0 },
+      { label: 'Límite superior', data: [], borderColor: 'rgba(200,55,45,.55)', borderWidth: 1.5, borderDash: [3, 4], pointRadius: 0 },
+      { label: 'Límite inferior', data: [], borderColor: 'rgba(200,55,45,.55)', borderWidth: 1.5, borderDash: [3, 4], pointRadius: 0 }
+    ] },
+    options: {
+      maintainAspectRatio: false, animation: false,
+      plugins: { legend: { labels: { color: '#5a6578', font: { family: 'Barlow', size: 13 }, boxWidth: 18 } } },
+      scales: {
+        y: { min: 0.78, max: 1.22, ticks: { color: '#5a6578', callback: v => v.toFixed(2).replace('.', ',') }, grid: { color: '#e9ecef' } },
+        x: { ticks: { color: '#5a6578', maxTicksLimit: 8, autoSkip: true }, grid: { display: false } }
+      }
+    }
+  });
+
+  // ---------------- Cinta transportadora animada (canvas) ----------------
+  const cinta = (() => {
+    const cv = $('cinta'), ctx = cv.getContext('2d');
+    const quieto = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const S = { objetivo: 0, estado: 'DETENIDO', activo: false };
+    const PX = 95;                       // píxeles por metro: 1 m/s = 95 px/s
+    let W = 0, H = 0, v = 0, off = 0, rocas = [], polvo = [], pila = 6, acum = 0, baliza = 0, pulso = 0, angSensor = 0;
+    const COL = { acero: '#7d8796', aceroOsc: '#5b6575', goma: '#262b33', seg: '#f2b705', tinta: '#1b2a4a' };
+    const coloresRoca = ['#8a7a63', '#9c8a6e', '#776a57', '#a8977b', '#6f6455', '#b09f82'];
+
+    function medir() {
+      const r = cv.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+      W = r.width; H = r.height; cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    new ResizeObserver(medir).observe(cv); medir();
+
+    const geo = () => {
+      const R = 21, topY = 92, tailX = 74, headX = Math.max(tailX + 220, W - 175);
+      return { R, topY, tailX, headX, cy: topY + R, botY: topY + 2 * R, suelo: H - 10, pilaX: headX + 95 };
+    };
+
+    function nuevaRoca(g) {
+      const r = 3.5 + Math.random() * 6, n = 7, pts = [];
+      for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; pts.push([Math.cos(a) * r * (0.75 + Math.random() * 0.4), Math.sin(a) * r * (0.7 + Math.random() * 0.35)]); }
+      return { x: g.tailX + 18 + Math.random() * 46, y: 52, vy: 40, vx: 0, r, pts, c: coloresRoca[Math.random() * coloresRoca.length | 0], rot: Math.random() * 6, vr: 0, fase: 'cae' };
+    }
+    function dibujaRoca(k) {
+      ctx.save(); ctx.translate(k.x, k.y); ctx.rotate(k.rot);
+      ctx.beginPath(); k.pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+      ctx.fillStyle = k.c; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 1; ctx.stroke(); ctx.restore();
+    }
+    function rodillo(x, y, r, ang, cara = '#c9d0d8') {
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = cara; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = COL.aceroOsc; ctx.stroke();
+      ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.strokeStyle = COL.aceroOsc; ctx.lineWidth = r > 10 ? 2.5 : 1.5;
+      const rayos = r > 10 ? 4 : 2;
+      for (let i = 0; i < rayos; i++) { ctx.rotate(Math.PI / rayos); ctx.beginPath(); ctx.moveTo(-r * 0.78, 0); ctx.lineTo(r * 0.78, 0); ctx.stroke(); }
+      ctx.restore();
+      ctx.beginPath(); ctx.arc(x, y, r * 0.28, 0, Math.PI * 2); ctx.fillStyle = COL.aceroOsc; ctx.fill();
+    }
+
+    function paso(dt) {
+      const g = geo();
+      // Inercia del motor: la cinta acelera y frena de forma gradual
+      v += (S.objetivo - v) * Math.min(1, dt * 1.3);
+      if (Math.abs(v) < 0.002) v = 0;
+      const vpx = v * PX;
+      off = (off + vpx * dt) % 10000;
+      baliza += dt * 5;
+      // Sensor de velocidad: un pulso por cada vuelta del polín de retorno
+      angSensor += vpx * dt / 7; if (angSensor > Math.PI * 2) { angSensor -= Math.PI * 2; pulso = 1; }
+      pulso = Math.max(0, pulso - dt * 5);
+
+      // Alimentación desde la tolva, proporcional a la velocidad
+      if (v > 0.05 && rocas.length < 80) { acum += dt * v * 3.4; while (acum >= 1) { acum--; rocas.push(nuevaRoca(g)); } }
+
+      const pilaTop = x => g.suelo - Math.max(0, pila * (1 - Math.abs(x - g.pilaX) / 70));
+      for (const k of rocas) {
+        if (k.fase === 'cae') {                         // cae de la tolva a la cinta
+          k.vy += 900 * dt; k.y += k.vy * dt; k.x += vpx * dt * 0.3;
+          const sobre = g.topY - 3 - k.r * 0.55;
+          if (k.y >= sobre) { k.y = sobre; k.fase = 'cinta'; }
+        } else if (k.fase === 'cinta') {               // viaja sobre la cinta
+          k.x += vpx * dt;
+          if (k.x >= g.headX + 4) { k.fase = 'vuela'; k.vx = Math.max(vpx, 25) * (0.9 + Math.random() * 0.25); k.vy = -15 - Math.random() * 20; k.vr = (Math.random() - 0.5) * 8; }
+        } else if (k.fase === 'vuela') {               // trayectoria parabólica al acopio
+          k.vy += 900 * dt; k.x += k.vx * dt; k.y += k.vy * dt; k.rot += k.vr * dt;
+          if (k.y >= pilaTop(k.x) - k.r * 0.4) {
+            k.fase = 'fin'; pila = Math.min(46, pila + 0.18);
+            for (let i = 0; i < 3; i++) polvo.push({ x: k.x, y: k.y, vx: (Math.random() - 0.5) * 50, vy: -20 - Math.random() * 30, vida: 1 });
+          }
+        }
+      }
+      rocas = rocas.filter(k => k.fase !== 'fin');
+      for (const p of polvo) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 30 * dt; p.vida -= dt * 1.2; }
+      polvo = polvo.filter(p => p.vida > 0);
+    }
+
+    function dibuja() {
+      const g = geo(), ang = off / g.R, angPolin = off / 6;
+      ctx.clearRect(0, 0, W, H);
+      ctx.save();
+      if (S.estado === 'SOBRE' && v > 0.1 && !quieto) ctx.translate((Math.random() - 0.5) * 2.2, (Math.random() - 0.5) * 1.6);
+
+      // Suelo
+      ctx.fillStyle = '#d9dee3'; ctx.fillRect(0, g.suelo, W, H - g.suelo);
+      ctx.fillStyle = '#c8ced5'; ctx.fillRect(0, g.suelo, W, 2);
+
+      // Acopio (pila de material)
+      ctx.beginPath(); ctx.moveTo(g.pilaX - 72, g.suelo);
+      for (let x = -72; x <= 72; x += 6) ctx.lineTo(g.pilaX + x, g.suelo - Math.max(0, pila * (1 - Math.abs(x) / 70)) + Math.sin(x * 1.7) * 1.2);
+      ctx.lineTo(g.pilaX + 72, g.suelo); ctx.closePath(); ctx.fillStyle = '#9a896d'; ctx.fill();
+
+      // Estructura: patas con arriostramiento y viga larguero
+      const largY = g.botY + 14, patas = [];
+      for (let x = g.tailX + 10; x <= g.headX - 5; x += Math.max(110, (g.headX - g.tailX) / 4)) patas.push(x);
+      patas.push(g.headX - 5);
+      ctx.strokeStyle = COL.acero; ctx.lineWidth = 5;
+      patas.forEach(x => { ctx.beginPath(); ctx.moveTo(x, largY + 8); ctx.lineTo(x, g.suelo); ctx.stroke(); ctx.fillStyle = COL.aceroOsc; ctx.fillRect(x - 9, g.suelo - 3, 18, 4); });
+      ctx.lineWidth = 1.5; ctx.strokeStyle = '#9aa3af';
+      for (let i = 0; i < patas.length - 1; i++) { const a = patas[i], b = patas[i + 1];
+        ctx.beginPath(); ctx.moveTo(a, largY + 10); ctx.lineTo(b, g.suelo - 4); ctx.moveTo(b, largY + 10); ctx.lineTo(a, g.suelo - 4); ctx.stroke(); }
+      // Larguero amarillo de seguridad con franjas en los extremos
+      ctx.fillStyle = COL.seg; ctx.fillRect(g.tailX - 14, largY, g.headX - g.tailX + 28, 9);
+      ctx.save(); ctx.beginPath(); ctx.rect(g.tailX - 14, largY, 40, 9); ctx.rect(g.headX - 26, largY, 40, 9); ctx.clip();
+      ctx.strokeStyle = COL.tinta; ctx.lineWidth = 4;
+      for (let x = g.tailX - 30; x < g.headX + 30; x += 10) { ctx.beginPath(); ctx.moveTo(x, largY + 9); ctx.lineTo(x + 9, largY); ctx.stroke(); }
+      ctx.restore();
+
+      // Polines de retorno (bajo la cinta) y sensor de velocidad
+      const retornos = []; for (let x = g.tailX + 60; x < g.headX - 30; x += 95) retornos.push(x);
+      retornos.forEach(x => rodillo(x, g.botY + 6, 6, angPolin));
+      if (retornos.length) {
+        const sx = retornos[0];
+        ctx.strokeStyle = '#4b5563'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(sx + 8, g.botY + 6); ctx.quadraticCurveTo(sx + 18, largY + 22, sx + 6, largY + 40); ctx.stroke();
+        ctx.fillStyle = COL.seg; ctx.fillRect(sx + 6, g.botY - 1, 13, 13); ctx.strokeStyle = COL.tinta; ctx.lineWidth = 1; ctx.strokeRect(sx + 6, g.botY - 1, 13, 13);
+        ctx.beginPath(); ctx.arc(sx + 12.5, g.botY + 5.5, 3, 0, Math.PI * 2);
+        ctx.fillStyle = pulso > 0.05 ? `rgba(34,197,94,${0.4 + pulso * 0.6})` : '#3f4a5a'; ctx.fill();
+        if (pulso > 0.05) { ctx.beginPath(); ctx.arc(sx + 12.5, g.botY + 5.5, 6 + pulso * 4, 0, Math.PI * 2); ctx.fillStyle = `rgba(34,197,94,${pulso * 0.25})`; ctx.fill(); }
+      }
+
+      // Cinta: tramo de retorno, tramo de carga y vuelta por los tambores
+      ctx.lineWidth = 7; ctx.strokeStyle = COL.goma; ctx.lineCap = 'butt';
+      ctx.beginPath(); ctx.moveTo(g.tailX, g.botY); ctx.lineTo(g.headX, g.botY); ctx.stroke();
+      ctx.beginPath(); ctx.arc(g.tailX, g.cy, g.R, Math.PI / 2, Math.PI * 1.5); ctx.stroke();
+      ctx.beginPath(); ctx.arc(g.headX, g.cy, g.R, -Math.PI / 2, Math.PI / 2); ctx.stroke();
+      ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(g.tailX, g.topY); ctx.lineTo(g.headX, g.topY); ctx.stroke();
+      // Marcas de la goma: muestran el avance real de la cinta
+      ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 2;
+      const paso = 26, d = ((off % paso) + paso) % paso;
+      for (let x = g.tailX + d; x < g.headX; x += paso) { ctx.beginPath(); ctx.moveTo(x, g.topY - 3.5); ctx.lineTo(x, g.topY + 3.5); ctx.stroke(); }
+      for (let x = g.headX - d; x > g.tailX; x -= paso) { ctx.beginPath(); ctx.moveTo(x, g.botY - 3); ctx.lineTo(x, g.botY + 3); ctx.stroke(); }
+
+      // Polines de carga (sostienen el tramo superior)
+      for (let x = g.tailX + 45; x < g.headX - 25; x += 58) rodillo(x, g.topY + 10, 5.5, angPolin);
+
+      // Tambores de cola y de cabeza
+      rodillo(g.tailX, g.cy, g.R - 4, ang, '#d6dbe1');
+      rodillo(g.headX, g.cy, g.R - 4, ang, '#d6dbe1');
+
+      // Motorreductor junto al tambor motriz
+      const mx = g.headX + 4, my = g.cy + g.R + 10;
+      ctx.fillStyle = '#3d5a80'; ctx.beginPath(); ctx.roundRect(mx, my, 54, 26, 4); ctx.fill();
+      ctx.fillStyle = '#2c4363'; for (let i = 0; i < 5; i++) ctx.fillRect(mx + 8 + i * 8, my + 4, 3, 18);
+      const led = !S.activo ? '#facc15' : (S.estado === 'NORMAL' ? '#22c55e' : '#ef4444');
+      ctx.beginPath(); ctx.arc(mx + 48, my + 7, 3.2, 0, Math.PI * 2); ctx.fillStyle = led; ctx.fill();
+      ctx.strokeStyle = COL.acero; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(g.headX, g.cy); ctx.lineTo(mx + 6, my + 4); ctx.stroke();
+
+      // Tolva de alimentación con material
+      const hx = g.tailX + 6, hw = 72;
+      ctx.strokeStyle = COL.acero; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(hx - 8, 18); ctx.lineTo(hx - 8, g.topY + 4); ctx.moveTo(hx + hw + 8, 18); ctx.lineTo(hx + hw + 8, g.topY + 4); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(hx - 12, 14); ctx.lineTo(hx + hw + 12, 14); ctx.lineTo(hx + hw - 6, 50); ctx.lineTo(hx + 12, 50); ctx.closePath();
+      ctx.fillStyle = '#aab3be'; ctx.fill(); ctx.strokeStyle = COL.aceroOsc; ctx.lineWidth = 2; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(hx - 6, 16); ctx.quadraticCurveTo(hx + hw / 2, 2, hx + hw + 6, 16); ctx.closePath(); ctx.fillStyle = '#8f7f66'; ctx.fill();
+      ctx.fillStyle = COL.seg; ctx.fillRect(hx - 12, 12, hw + 24, 4);
+
+      // Rocas
+      rocas.forEach(dibujaRoca);
+      polvo.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2); ctx.fillStyle = `rgba(156,138,110,${p.vida * 0.6})`; ctx.fill(); });
+
+      // Baliza de alerta sobre la estructura
+      const bx = g.headX - 40, by = 30, alerta = ['SUB', 'SOBRE', 'INVALIDA'].includes(S.estado);
+      ctx.strokeStyle = COL.acero; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bx, by + 10); ctx.lineTo(bx, g.topY - 6); ctx.stroke();
+      if (alerta) {
+        const color = S.estado === 'INVALIDA' ? '242,183,5' : '239,68,68';
+        ctx.save(); ctx.translate(bx, by);
+        const a = baliza, ancho = Math.abs(Math.cos(a));
+        ctx.fillStyle = `rgba(${color},${0.18 + 0.15 * ancho})`;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 70, -0.35 + (Math.cos(a) > 0 ? 0 : Math.PI), 0.35 + (Math.cos(a) > 0 ? 0 : Math.PI)); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.fillStyle = `rgba(${color},${0.25 + 0.25 * ancho})`; ctx.fill();
+        ctx.restore();
+      }
+      ctx.beginPath(); ctx.ellipse(bx, by, 7, 9, 0, Math.PI, 0); ctx.lineTo(bx + 7, by + 8); ctx.lineTo(bx - 7, by + 8); ctx.closePath();
+      ctx.fillStyle = alerta ? (S.estado === 'INVALIDA' ? '#f2b705' : '#ef4444') : '#c3c9d1'; ctx.fill();
+      ctx.fillStyle = COL.aceroOsc; ctx.fillRect(bx - 9, by + 7, 18, 4);
+
+      ctx.restore();
+    }
+
+    let antes = performance.now();
+    function bucle(t) {
+      const dt = Math.min(0.05, (t - antes) / 1000); antes = t;
+      if (!quieto) paso(dt); else { v = S.objetivo; }
+      dibuja();
+      requestAnimationFrame(bucle);
+    }
+    requestAnimationFrame(bucle);
+    return S;
+  })();
+
+  // ---------------- Render ----------------
+  function render() {
+    const u = hist[hist.length - 1];
+    const activo = equipo.estado === 'ACTIVO';
+    const nominal = u ? u.nominal : equipo.nominal, umbral = u ? u.umbral : equipo.umbral;
+
+    // Cinta animada: velocidad objetivo = velocidad medida (0 si está detenida)
+    cinta.objetivo = activo && u && !u.invalida ? u.actual : 0;
+    cinta.estado = !activo ? 'DETENIDO' : (u && u.invalida ? 'INVALIDA' : (u && u.estado === 'ALERTA' ? (u.actual < u.nominal ? 'SUB' : 'SOBRE') : 'NORMAL'));
+    cinta.activo = activo;
+
+    // Lectura principal
+    $('vel').textContent = u && !u.invalida ? fmt(u.actual, 3) : '—';
+    const ver = $('veredicto'), det = $('detalle');
+    if (equipo.estado === 'OFFLINE') { ver.textContent = 'Equipo fuera de línea'; ver.className = 'veredicto mal'; det.textContent = 'El broker avisó que el ESP32 perdió la conexión.'; }
+    else if (!activo) { ver.textContent = equipo.estado === 'DETENIDO' ? 'Sistema detenido' : 'Esperando la primera medición'; ver.className = 'veredicto aviso'; det.textContent = 'Enciende el sistema con el botón ON/OFF en Wokwi.'; }
+    else if (!u) { ver.textContent = 'Sistema activo'; ver.className = 'veredicto ok'; det.textContent = 'La primera medición llega en segundos.'; }
+    else if (u.invalida) { ver.textContent = 'Medición inválida'; ver.className = 'veredicto aviso'; det.textContent = 'El sensor no entrega señal. Revisar conexión del sensor.'; }
+    else if (u.estado === 'NORMAL') { ver.textContent = 'Operación normal'; ver.className = 'veredicto ok'; det.textContent = `Dentro del ±${fmt(umbral, 1)} % de la velocidad nominal.`; }
+    else { ver.textContent = u.actual < nominal ? 'Alerta de subvelocidad' : 'Alerta de sobrevelocidad'; ver.className = 'veredicto mal';
+           det.textContent = `Se desvía ${fmt(u.desviacion, 1)} % de la nominal (máximo ${fmt(umbral, 1)} %).`; }
+
+    // Escala
+    const pos = v => Math.min(100, Math.max(0, (v - VMIN) / (VMAX - VMIN) * 100));
+    const lo = nominal * (1 - umbral / 100), hi = nominal * (1 + umbral / 100);
+    $('escBanda').style.left = pos(lo) + '%'; $('escBanda').style.width = (pos(hi) - pos(lo)) + '%';
+    $('escNominal').style.left = pos(nominal) + '%';
+    if (u && !u.invalida) $('escAguja').style.left = pos(u.actual) + '%';
+    $('escRango').textContent = `Zona permitida: ${fmt(lo, 3)} a ${fmt(hi, 3)} m/s`;
+
+    // Indicadores
+    $('kDesv').textContent = u && !u.invalida ? fmt(u.desviacion, 2) + ' %' : '—';
+    $('kDesv').style.color = u && !u.invalida ? (u.estado === 'NORMAL' ? 'var(--ok)' : 'var(--alerta)') : '';
+    $('kUmbral').textContent = fmt(umbral, 1) + ' %';
+    $('kNominal').textContent = fmt(nominal, 2);
+    $('kId').textContent = u ? u.id : '—';
+    $('kMed').textContent = hist.filter(h => !h.invalida).length;
+    $('kAl').textContent = alertas.length;
+
+    // Espejo LCD + LED (misma lógica que el firmware)
+    const pad = s => (s + ' '.repeat(16)).slice(0, 16);
+    let l1, l2;
+    if (equipo.estado === 'OFFLINE' || !equipo.estado) { l1 = 'SIN CONEXION'; l2 = 'Esperando datos'; }
+    else if (!activo) { l1 = 'SISTEMA DETENIDO'; l2 = 'Pulse el boton'; }
+    else if (!u) { l1 = 'SISTEMA ACTIVO'; l2 = 'Sesion S' + equipo.sesion; }
+    else if (u.invalida) { l1 = 'MEDICION INVALID'; l2 = 'Revisar sensor'; }
+    else { l1 = `V:${u.actual.toFixed(2)} D:${u.desviacion.toFixed(1)}%`;
+           l2 = u.estado === 'NORMAL' ? 'NORMAL  ' + u.id : (u.actual < u.nominal ? 'SUBVE ' : 'SOBRE ') + u.id; }
+    $('lcd').textContent = pad(l1) + '\n' + pad(l2);
+    $('ledV').classList.toggle('on', activo && u && !u.invalida && u.estado === 'NORMAL');
+    $('ledA').classList.toggle('on', equipo.estado === 'DETENIDO');
+    $('ledR').classList.toggle('on', activo && u && (u.invalida || u.estado === 'ALERTA'));
+
+    // Chip equipo
+    const ce = $('chipEquipo');
+    const txt = { ACTIVO: `Equipo activo · sesión S${equipo.sesion}`, DETENIDO: 'Equipo detenido', OFFLINE: 'Equipo fuera de línea' }[equipo.estado] || 'Equipo sin datos';
+    ce.querySelector('span').textContent = txt;
+    ce.className = 'chip ' + ({ ACTIVO: 'ok', DETENIDO: 'medio', OFFLINE: 'mal' }[equipo.estado] || '');
+
+    // Gráfico
+    const ult = hist.filter(h => !h.invalida).slice(-60);
+    chart.data.labels = ult.map(h => h.id);
+    chart.data.datasets[0].data = ult.map(h => h.actual);
+    chart.data.datasets[0].pointBackgroundColor = ult.map(h => h.estado === 'NORMAL' ? '#1b2a4a' : '#c8372d');
+    chart.data.datasets[1].data = ult.map(h => h.nominal);
+    chart.data.datasets[2].data = ult.map(h => +(h.nominal * (1 + h.umbral / 100)).toFixed(3));
+    chart.data.datasets[3].data = ult.map(h => +(h.nominal * (1 - h.umbral / 100)).toFixed(3));
+    chart.update();
+
+    // Alertas
+    const nombres = { SUBVELOCIDAD: 'Subvelocidad', SOBREVELOCIDAD: 'Sobrevelocidad', MEDICION_INVALIDA: 'Medición inválida' };
+    $('listaAlertas').innerHTML = alertas.length ? alertas.slice(-40).reverse().map(a => `
+      <li class="${a.tipo === 'MEDICION_INVALIDA' ? 'inv' : ''}">
+        <div><div class="t">${nombres[a.tipo] || a.tipo} · ${a.id || ''}</div>
+        <div class="d">${a.actual != null ? fmt(a.actual, 3) + ' m/s · desviación ' + fmt(a.desviacion, 1) + ' %' : 'Sensor sin señal'}</div>
+        ${a.reconocida ? `<div class="rec">Reconocida por ${esc(a.reconocida.por)} a las ${hora(a.reconocida.t)}</div>` : '<div class="pend">Pendiente de reconocer</div>'}</div>
+        <span class="h">${fecha(a.t)}<br>${hora(a.t)}</span></li>`).join('') : '<li class="vacio" style="display:block">Sin alertas en esta sesión.</li>';
+
+    // Resumen
+    const vals = hist.filter(h => !h.invalida).map(h => h.actual);
+    const n = vals.length;
+    $('rProm').textContent = n ? fmt(vals.reduce((a, b) => a + b, 0) / n, 3) : '—';
+    $('rMin').textContent = n ? fmt(Math.min(...vals), 3) : '—';
+    $('rMax').textContent = n ? fmt(Math.max(...vals), 3) : '—';
+    $('rNormal').textContent = n ? Math.round(100 * hist.filter(h => h.estado === 'NORMAL').length / n) + ' %' : '—';
+    $('rSub').textContent = alertas.filter(a => a.tipo === 'SUBVELOCIDAD').length;
+    $('rSobre').textContent = alertas.filter(a => a.tipo === 'SOBREVELOCIDAD').length;
+  }
+
+  function latidoTxt() {
+    $('latido').textContent = ultimoLatido ? `Último latido del equipo hace ${Math.round((Date.now() - ultimoLatido) / 1000)} s.` : 'Sin latido del equipo todavía.';
+  }
+
+  // ---------------- Registro de mensajes ----------------
+  function log(topic, payload, salida = false) {
+    const r = $('registro'), d = document.createElement('div');
+    d.innerHTML = `<span>${hora(Date.now())}</span> <span class="${salida ? 'out' : 'tp'}">${salida ? '⇢ ' : ''}${topic}</span> ${String(payload).replace(/</g, '&lt;')}`;
+    r.appendChild(d); while (r.children.length > 200) r.firstChild.remove();
+    r.scrollTop = r.scrollHeight;
+  }
+
+  // ---------------- Procesamiento de mensajes ----------------
+  function procesar(topic, txt) {
+    const sub = topic.split('/').pop();
+    log(topic, txt);
+    if (sub === 'latido') { ultimoLatido = Date.now(); latidoTxt(); return; }
+    let d; try { d = JSON.parse(txt); } catch { return; }
+    if (sub === 'estado') {
+      equipo = { ...equipo, ...d };
+      if (cfgPendiente && Math.abs((cfgPendiente.campo === 'N' ? d.nominal : d.umbral) - cfgPendiente.valor) < 0.001) {
+        aviso(`Confirmado por el equipo: ${cfgPendiente.campo === 'N' ? 'nominal ' + fmt(d.nominal, 2) + ' m/s' : 'umbral ' + fmt(d.umbral, 1) + ' %'}.`, 'ok');
+        cfgPendiente = null;
+      }
+    } else if (sub === 'velocidad') {
+      const m = { id: d.id, sesion: d.sesion, actual: +d.actual, nominal: +d.nominal, umbral: +d.umbral, desviacion: +d.desviacion, estado: d.estado, t: Date.now() };
+      if (!(m.actual >= VMIN && m.actual <= VMAX)) return;   // validación (Transform)
+      equipo.estado = 'ACTIVO'; equipo.nominal = m.nominal; equipo.umbral = m.umbral; equipo.sesion = m.sesion;
+      hist.push(m); if (hist.length > MAXHIST) hist = hist.slice(-MAXHIST);
+      LS.set('dym.hist', hist);
+    } else if (sub === 'alertas') {
+      const a = { ...d, t: Date.now(), uid: Date.now() + '-' + Math.random().toString(16).slice(2, 6), operador: operador() || null, reconocida: null };
+      if (a.actual == null) { const u = hist[hist.length - 1]; if (u && !u.invalida) a.ultimaValida = u.actual; }
+      alertas.push(a); if (alertas.length > MAXHIST) alertas = alertas.slice(-MAXHIST);
+      LS.set('dym.alertas', alertas);
+      mostrarPopup(a);
+      if (d.tipo === 'MEDICION_INVALIDA') { hist.push({ id: d.id, invalida: true, estado: 'INVALIDA', t: Date.now() }); LS.set('dym.hist', hist); }
+    } else return;
+    render();
+  }
+
+  // ---------------- MQTT ----------------
+  function chipBroker(cls, txt) { const c = $('chipBroker'); c.className = 'chip ' + cls; c.querySelector('span').textContent = txt; }
+  function conectar() {
+    if (client) { try { client.end(true); } catch {} }
+    $('subTopic').textContent = `Suscrito a ${BASE}/#`;
+    chipBroker('medio', 'Conectando al broker…');
+    client = mqtt.connect(BROKER, { clientId: 'dym-dashboard-' + Math.random().toString(16).slice(2, 10), reconnectPeriod: 3000, connectTimeout: 8000 });
+    client.on('connect', () => { chipBroker('ok', 'Broker conectado'); client.subscribe(BASE + '/#', { qos: 1 }); });
+    client.on('reconnect', () => chipBroker('medio', 'Reconectando…'));
+    client.on('close', () => chipBroker('mal', 'Broker desconectado'));
+    client.on('error', e => chipBroker('mal', 'Error de conexión: ' + e.message));
+    client.on('message', (t, p) => { if (!t.endsWith('/config')) procesar(t, p.toString()); });
+  }
+
+  // ---------------- Configuración remota ----------------
+  function aviso(t, cls = '') { const a = $('avisoCfg'); a.textContent = t; a.className = 'aviso-cfg ' + cls; }
+  function enviarCfg(campo, valor) {
+    if (!client || !client.connected) { aviso('No hay conexión con el broker. Revisa la conexión y vuelve a intentar.', 'mal'); return; }
+    const cmd = `${campo}=${valor}`;
+    client.publish(BASE + '/config', cmd, { qos: 1 });
+    log(BASE + '/config', cmd, true);
+    cfgPendiente = { campo, valor: +valor };
+    aviso(`Enviado ${cmd}. Esperando confirmación del equipo…`);
+    setTimeout(() => { if (cfgPendiente && cfgPendiente.campo === campo) { aviso(`El equipo no confirmó ${cmd}. Verifica que la simulación esté corriendo y visible.`, 'mal'); cfgPendiente = null; } }, 20000);
+  }
+  $('fNominal').onsubmit = e => { e.preventDefault(); const v = +$('inNominal').value;
+    if (!(v >= VMIN && v <= VMAX)) return aviso('La nominal debe estar entre 0,80 y 1,20 m/s.', 'mal'); enviarCfg('N', v.toFixed(2)); };
+  $('fUmbral').onsubmit = e => { e.preventDefault(); const v = +$('inUmbral').value;
+    if (!(v > 0 && v <= 20)) return aviso('El umbral debe ser mayor que 0 y hasta 20 %.', 'mal'); enviarCfg('U', String(v)); };
+
+  // ---------------- Ventanas de alerta ----------------
+  const MAXPOP = 3;
+  const icono = '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v4.5M12 17.2v.3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
+  function mostrarPopup(a) {
+    const nombres = { SUBVELOCIDAD: 'Subvelocidad', SOBREVELOCIDAD: 'Sobrevelocidad', MEDICION_INVALIDA: 'Medición inválida' };
+    const inv = a.tipo === 'MEDICION_INVALIDA';
+    const div = document.createElement('div');
+    div.className = 'popup' + (inv ? ' inv' : ''); div.dataset.uid = a.uid;
+    div.setAttribute('role', 'alertdialog'); div.setAttribute('aria-label', 'Alerta de ' + (nombres[a.tipo] || a.tipo));
+    const vel = a.actual != null ? fmt(a.actual, 3) : (a.ultimaValida != null ? fmt(a.ultimaValida, 3) : '—');
+    div.innerHTML = `
+      <div class="popup-cab">${icono}<strong>${nombres[a.tipo] || a.tipo}</strong>
+        <button class="cerrar" aria-label="Ocultar ventana (la alerta sigue pendiente)">×</button></div>
+      <div class="popup-cuerpo">
+        <div class="popup-vel num">${vel}<small>m/s${a.actual == null ? ' (última válida)' : ''}</small></div>
+        <dl>
+          <dt>Fecha</dt><dd>${fecha(a.t)}</dd>
+          <dt>Hora</dt><dd>${hora(a.t)}</dd>
+          ${a.actual != null ? `<dt>Desviación</dt><dd>${fmt(a.desviacion, 2)} % (máximo ${fmt(a.umbral, 1)} %)</dd>` : '<dt>Causa</dt><dd>El sensor no entrega señal</dd>'}
+          <dt>ID de medición</dt><dd>${esc(a.id)}</dd>
+          <dt>Operador de turno</dt><dd>${a.operador ? esc(a.operador) : '<span style="color:var(--alerta)">Sin operador registrado</span>'}</dd>
+        </dl>
+        <button class="btn reconocer">Reconocer alerta</button>
+      </div>`;
+    div.querySelector('.cerrar').onclick = () => { div.remove(); contarPopups(); };
+    div.querySelector('.reconocer').onclick = () => reconocer(a.uid);
+    $('popups').prepend(div);
+    contarPopups();
+    pitido(inv);
+  }
+  function contarPopups() {
+    const cont = $('popups'), pops = [...cont.querySelectorAll('.popup')];
+    pops.forEach((p, i) => p.style.display = i < MAXPOP ? '' : 'none');
+    cont.querySelector('.mas')?.remove();
+    if (pops.length > MAXPOP) { const m = document.createElement('div'); m.className = 'mas'; m.textContent = `+${pops.length - MAXPOP} alertas más sin reconocer`; cont.appendChild(m); }
+  }
+  function reconocer(uid) {
+    const por = operador();
+    if (!por) {
+      $('opWrap').classList.add('falta'); $('inOperador').focus();
+      $('inOperador').placeholder = 'Escribe tu nombre para reconocer';
+      return;
+    }
+    const a = alertas.find(x => x.uid === uid);
+    if (a) { a.reconocida = { por, t: Date.now() }; LS.set('dym.alertas', alertas); }
+    document.querySelector(`.popup[data-uid="${uid}"]`)?.remove();
+    contarPopups(); render();
+  }
+
+  // Sonido de alerta (el navegador exige activarlo con un clic)
+  let audio = null, sonidoOn = false;
+  $('btnSonido').onclick = () => {
+    sonidoOn = !sonidoOn;
+    try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch { sonidoOn = false; }
+    $('btnSonido').textContent = sonidoOn ? '🔔 Sonido' : '🔇 Sonido';
+    $('btnSonido').setAttribute('aria-pressed', String(sonidoOn));
+    if (sonidoOn) pitido(false);
+  };
+  function pitido(suave) {
+    if (!sonidoOn || !audio) return;
+    try {
+      [0, 0.22].forEach(d => {
+        const o = audio.createOscillator(), g = audio.createGain();
+        o.type = 'square'; o.frequency.value = suave ? 660 : 880;
+        g.gain.setValueAtTime(0.0001, audio.currentTime + d);
+        g.gain.exponentialRampToValueAtTime(0.15, audio.currentTime + d + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + d + 0.18);
+        o.connect(g).connect(audio.destination); o.start(audio.currentTime + d); o.stop(audio.currentTime + d + 0.2);
+      });
+    } catch {}
+  }
+
+  // Operador de turno (se recuerda en este navegador)
+  $('inOperador').value = LS.get('dym.operador', '');
+  $('inOperador').oninput = () => { LS.set('dym.operador', operador()); if (operador()) $('opWrap').classList.remove('falta'); };
+
+  // ---------------- Acciones ----------------
+  $('btnCsvAl').onclick = () => {
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const filas = [['fecha', 'hora', 'id_medicion', 'tipo', 'velocidad_m_s', 'desviacion_pct', 'umbral_pct', 'operador_turno', 'reconocida_por', 'hora_reconocimiento']]
+      .concat(alertas.map(a => [fecha(a.t), hora(a.t), a.id, a.tipo, a.actual ?? '', a.desviacion ?? '', a.umbral ?? '', a.operador ?? '',
+        a.reconocida ? a.reconocida.por : '', a.reconocida ? hora(a.reconocida.t) : ''].map(q)));
+    const blob = new Blob(['﻿' + filas.map(f => f.join(',')).join('\n')], { type: 'text/csv' });
+    const el = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'alertas_banda01.csv' });
+    document.body.appendChild(el); el.click(); el.remove();
+  };
+  $('btnCsv').onclick = () => {
+    const filas = [['fecha_hora', 'id_medicion', 'sesion', 'velocidad_m_s', 'nominal_m_s', 'desviacion_pct', 'umbral_pct', 'estado']]
+      .concat(hist.map(h => [new Date(h.t).toISOString(), h.id, h.sesion ?? '', h.actual ?? '', h.nominal ?? '', h.desviacion ?? '', h.umbral ?? '', h.estado]));
+    const blob = new Blob([filas.map(f => f.join(',')).join('\n')], { type: 'text/csv' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'mediciones_banda01.csv' });
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  $('btnBorrar').onclick = () => { hist = []; alertas = []; LS.set('dym.hist', hist); LS.set('dym.alertas', alertas); $('popups').innerHTML = ''; render(); };
+
+  // Modo de simulación local: genera datos en este navegador (no publica en el broker)
+  $('btnDemo').onclick = () => {
+    const b = $('btnDemo');
+    if (demoTimer) { clearInterval(demoTimer); demoTimer = null; b.textContent = 'Simular datos'; b.setAttribute('aria-pressed', 'false'); return; }
+    b.textContent = 'Detener simulación'; b.setAttribute('aria-pressed', 'true');
+    let i = 0, v = 1.0; const ses = 99;
+    const base = BASE + '/';
+    procesar(base + 'estado', JSON.stringify({ equipo: 'banda01', estado: 'ACTIVO', sesion: ses, nominal: 1.0, umbral: 5 }));
+    demoTimer = setInterval(() => {
+      i++; v = Math.min(1.19, Math.max(0.81, v + (Math.random() - 0.5) * 0.09 + (1 - v) * 0.12));
+      const des = Math.abs(v - 1) * 100, est = des <= 5 ? 'NORMAL' : 'ALERTA', id = `S${ses}-M${i}`;
+      procesar(base + 'velocidad', JSON.stringify({ id, sesion: ses, medicion: i, nominal: 1, actual: +v.toFixed(3), desviacion: +des.toFixed(2), umbral: 5, estado: est }));
+      if (est === 'ALERTA') procesar(base + 'alertas', JSON.stringify({ id, sesion: ses, medicion: i, tipo: v < 1 ? 'SUBVELOCIDAD' : 'SOBREVELOCIDAD', actual: +v.toFixed(3), desviacion: +des.toFixed(2), umbral: 5 }));
+    }, 1500);
+  };
+
+  $('inBroker').value = BROKER; $('inTopic').value = BASE;
+  $('fAjustes').onsubmit = e => { e.preventDefault(); BROKER = $('inBroker').value.trim(); BASE = $('inTopic').value.trim().replace(/\/+$/, '');
+    LS.set('dym.broker', BROKER); LS.set('dym.topic', BASE); conectar(); };
+
+
+  setInterval(latidoTxt, 1000);
+  render();
+  if (window.mqtt) conectar(); else chipBroker('mal', 'No se pudo cargar la librería MQTT (revisa internet)');
+})();
+</script>
+</body>
+</html>

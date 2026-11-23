@@ -35,3 +35,12 @@ Las pruebas funcionales del circuito se realizan de manera independiente en Tink
 ## Arquitectura futura
 
 Se propone integrar comunicación MQTT, almacenamiento Cloud y un dashboard para consulta de mediciones, alertas y registros históricos. Estas funcionalidades no están implementadas en el firmware actual.
+
+## EV3 · Kairós (Wokwi + ESP32 + MQTT + Flask)
+
+La evolución del prototipo para la EV3 está en la carpeta [`ev3/`](ev3/):
+
+- `ev3/wokwi/`: firmware ESP32 y circuito de Wokwi ([proyecto](https://wokwi.com/projects/481404802191682561)).
+- `ev3/backend/`: backend Flask con flujo ETL (MQTT → SQLite) y API REST.
+- `ev3/dashboard/`: dashboard web en vivo conectado al broker MQTT.
+- `.github/workflows/ev3-ci.yml`: pipeline que compila el firmware, prueba el backend y valida el diagrama.

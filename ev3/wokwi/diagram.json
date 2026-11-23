@@ -1,0 +1,319 @@
+{
+  "version": 1,
+  "author": "DYM Cyber - Hormazabal, Rivera, Huerta",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn1",
+      "top": 150,
+      "left": -150,
+      "attrs": {
+        "color": "blue",
+        "label": "ON/OFF",
+        "bounce": "0",
+        "key": "b"
+      }
+    },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "pot1",
+      "top": 40,
+      "left": -150,
+      "attrs": {
+        "label": "Velocidad"
+      }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "sw1",
+      "top": 225,
+      "left": -115,
+      "attrs": {
+        "label": "Falla sensor"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledV",
+      "top": 10,
+      "left": 170,
+      "attrs": {
+        "color": "green",
+        "label": "Normal"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledA",
+      "top": 10,
+      "left": 205,
+      "attrs": {
+        "color": "yellow",
+        "label": "Detenido"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledR",
+      "top": 10,
+      "left": 240,
+      "attrs": {
+        "color": "red",
+        "label": "Alerta"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 95,
+      "left": 160,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r2",
+      "top": 95,
+      "left": 195,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r3",
+      "top": 95,
+      "left": 230,
+      "rotate": 90,
+      "attrs": {
+        "value": "220"
+      }
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": -170,
+      "left": -40,
+      "attrs": {
+        "pins": "i2c"
+      }
+    },
+    {
+      "type": "wokwi-a4988",
+      "id": "drv1",
+      "top": 230,
+      "left": 150,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-stepper-motor",
+      "id": "stepper1",
+      "top": 165,
+      "left": 235,
+      "attrs": {
+        "size": "14",
+        "display": "angle"
+      }
+    }
+  ],
+  "connections": [
+    [
+      "esp:TX",
+      "$serialMonitor:RX",
+      "",
+      []
+    ],
+    [
+      "esp:RX",
+      "$serialMonitor:TX",
+      "",
+      []
+    ],
+    [
+      "btn1:1.r",
+      "esp:4",
+      "blue",
+      []
+    ],
+    [
+      "btn1:2.r",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "pot1:VCC",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "pot1:GND",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "pot1:SIG",
+      "esp:34",
+      "orange",
+      []
+    ],
+    [
+      "sw1:2",
+      "esp:14",
+      "purple",
+      []
+    ],
+    [
+      "sw1:3",
+      "esp:GND.1",
+      "black",
+      []
+    ],
+    [
+      "esp:25",
+      "r1:1",
+      "green",
+      []
+    ],
+    [
+      "r1:2",
+      "ledV:A",
+      "green",
+      []
+    ],
+    [
+      "esp:26",
+      "r2:1",
+      "gold",
+      []
+    ],
+    [
+      "r2:2",
+      "ledA:A",
+      "gold",
+      []
+    ],
+    [
+      "esp:27",
+      "r3:1",
+      "red",
+      []
+    ],
+    [
+      "r3:2",
+      "ledR:A",
+      "red",
+      []
+    ],
+    [
+      "ledV:C",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "ledA:C",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "ledR:C",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "lcd1:GND",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "lcd1:VCC",
+      "esp:5V",
+      "red",
+      []
+    ],
+    [
+      "lcd1:SDA",
+      "esp:21",
+      "blue",
+      []
+    ],
+    [
+      "lcd1:SCL",
+      "esp:22",
+      "violet",
+      []
+    ],
+    [
+      "drv1:STEP",
+      "esp:18",
+      "cyan",
+      []
+    ],
+    [
+      "drv1:DIR",
+      "esp:19",
+      "magenta",
+      []
+    ],
+    [
+      "drv1:RESET",
+      "drv1:SLEEP",
+      "gray",
+      []
+    ],
+    [
+      "drv1:VDD",
+      "esp:3V3",
+      "red",
+      []
+    ],
+    [
+      "drv1:GND",
+      "esp:GND.2",
+      "black",
+      []
+    ],
+    [
+      "drv1:2B",
+      "stepper1:A-",
+      "black",
+      []
+    ],
+    [
+      "drv1:2A",
+      "stepper1:A+",
+      "green",
+      []
+    ],
+    [
+      "drv1:1A",
+      "stepper1:B+",
+      "blue",
+      []
+    ],
+    [
+      "drv1:1B",
+      "stepper1:B-",
+      "red",
+      []
+    ]
+  ],
+  "dependencies": {}
+}
